@@ -138,7 +138,7 @@ class Import {
 				}
 
 				const queries = []; 
-				if (!galleries[gid]) {
+				if (!galleries.hasOwnProperty(gid)) {
 					inserted++;
 					queries.push(this.query('INSERT INTO gallery SET ?', {
 						gid, token, archiver_key, title, title_jpn, category, thumb, uploader,
