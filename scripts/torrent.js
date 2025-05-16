@@ -4,6 +4,8 @@ const http = require('http');
 const https = require('https');
 const config = require('../config');
 
+const timestamp_one_week_before = Date.now() / 1000 - 7 * 24 * 60 * 60;
+
 class TorrentImport {
 	constructor() {
 		this.initConnection = this.initConnection.bind(this);
@@ -79,7 +81,7 @@ class TorrentImport {
 	}
 
 	async getNotInited() {
-		return (await this.query('SELECT gid, token FROM gallery WHERE root_gid IS NULL AND removed = 0 ORDER BY gid ASC'));
+		return (await this.query('SELECT gid, token, posted FROM gallery WHERE root_gid IS NULL AND removed = 0 ORDER BY gid ASC'));
 	}
 
 	initProxy(server) {
@@ -149,7 +151,7 @@ class TorrentImport {
 		proxy.abort();
 	}
 
-	async getTorrents(gid, token) {
+	async getTorrents(gid, token, posted) {
 		let connect;
 		if (this.proxies.length) {
 			connect = await this.requestProxy();
@@ -210,7 +212,11 @@ class TorrentImport {
 								} else if (response.indexOf('This gallery is currently unavailable') >= 0) {
 									removed = true;
 								} else if (response.indexOf('Gallery not found') >= 0) {
-									pending = true;
+									if (posted < timestamp_one_week_before) {
+										removed = true;
+									} else {
+										pending = true;
+									}
 								} else {
 									reject(`res.statusCode = ${res.statusCode}`);
 								}
@@ -272,7 +278,7 @@ class TorrentImport {
 				}
 				for (; count <= this.limit && notInited.length; count++) {
 					const item = notInited.shift();
-					this.getTorrents(item.gid, item.token).then(async (res) => {
+					this.getTorrents(item.gid, item.token, item.posted).then(async (res) => {
 						const { gid, list, removed, pending } = res;
 						if (removed) {
 							await this.query('UPDATE gallery SET removed = 1 WHERE gid = ?', [item.gid]);
