@@ -182,7 +182,7 @@ class TorrentSync {
 							let removed = false;
 							let pending = false;
 							if (!gid) {
-								if (response.indexOf('Your IP address has been temporarily banned') >= 0) {
+								if (response.indexOf('IP address has been temporarily banned') >= 0) {
 									console.log(response);
 									process.exit();
 								} else if (response.indexOf('This gallery is currently unavailable') >= 0) {

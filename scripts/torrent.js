@@ -197,7 +197,7 @@ class TorrentImport {
 							let pending = false;
 							// console.log(gid, list);
 							if (!gid) {
-								if (response.indexOf('Your IP address has been temporarily banned') >= 0) {
+								if (response.indexOf('IP address has been temporarily banned') >= 0) {
 									if (connect) {
 										this.releaseProxy(connect);
 										const index = this.proxies.indexOf(connect.requestServer);
