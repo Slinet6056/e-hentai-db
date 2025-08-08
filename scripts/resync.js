@@ -2,8 +2,17 @@ const mysql = require('mysql');
 const fs = require('fs');
 const { Buffer } = require('buffer');
 const https = require('https');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const childProcess = require('child_process');
 const config = require('../config');
+
+const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+
+let agent = null;
+if (proxy) {
+  console.log(`using proxy: ${proxy}`);
+  agent = new HttpsProxyAgent(proxy);
+}
 
 class Resync {
 	constructor() {
@@ -53,6 +62,9 @@ class Resync {
 				return await fn(...args);
 			} catch (err) {
 				console.log(err.stack || err);
+				if (i < time - 1) {
+					await this.sleep(1);
+				}
 			}
 		}
 		throw new Error('Exceed maximum retry time');
@@ -83,6 +95,7 @@ class Resync {
 						'Upgrade-Insecure-Requests': 1,
 						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36'
 					},
+  					agent: agent,
 				} ,(res) => {
 					if (res.statusCode !== 200) {
 						reject(res);
