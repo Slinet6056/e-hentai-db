@@ -1,8 +1,10 @@
 node_modules/
 .vscode/
 gdata.json
+temp/
 *.swp
 *.tmp
 dist/
 .cookies
 .proxies
+.env

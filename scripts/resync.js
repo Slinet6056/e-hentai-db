@@ -3,15 +3,20 @@ const fs = require('fs');
 const { Buffer } = require('buffer');
 const https = require('https');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const childProcess = require('child_process');
 const config = require('../config');
 
-const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+const proxy = process.env.ALL_PROXY || process.env.all_proxy || process.env.HTTPS_PROXY || process.env.https_proxy;
 
 let agent = null;
 if (proxy) {
-  console.log(`using proxy: ${proxy}`);
-  agent = new HttpsProxyAgent(proxy);
+	console.log(`using proxy: ${proxy}`);
+	if (proxy.startsWith('http')) {
+		agent = new HttpsProxyAgent(proxy);
+	} else if (proxy.startsWith('socks')) {
+		agent = new SocksProxyAgent(proxy);
+	}
 }
 
 class Resync {
@@ -95,8 +100,8 @@ class Resync {
 						'Upgrade-Insecure-Requests': 1,
 						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36'
 					},
-  					agent: agent,
-				} ,(res) => {
+					agent: agent,
+				}, (res) => {
 					if (res.statusCode !== 200) {
 						reject(res);
 					}
@@ -153,7 +158,12 @@ class Resync {
 				metadatas.forEach(e => result[e.gid] = e);
 			}
 
-			const path = `gdata-${Date.now()}.json`;
+			const tempDir = './temp';
+			if (!fs.existsSync(tempDir)) {
+				fs.mkdirSync(tempDir);
+			}
+
+			const path = `${tempDir}/gdata-${Date.now()}.json`;
 			fs.writeFileSync(path, JSON.stringify(result), 'utf8');
 			console.log(`result is writted to ${path}, calling import script...`);
 
@@ -166,6 +176,12 @@ class Resync {
 			});
 			importProcess.on('close', (code) => {
 				console.log(`import script is exited with code ${code}`);
+				try {
+					fs.unlinkSync(path);
+					console.log(`temporary file ${path} has been deleted`);
+				} catch (err) {
+					console.error(`failed to delete temporary file ${path}:`, err.message);
+				}
 			});
 		});
 	}

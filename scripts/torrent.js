@@ -135,7 +135,7 @@ class TorrentImport {
 				newProxy.using = true;
 				return newProxy;
 			}
-			catch(err) {
+			catch (err) {
 				return await this.requestProxy();
 			}
 		}
