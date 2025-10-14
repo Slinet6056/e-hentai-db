@@ -4,10 +4,18 @@
 cat >/app/run-sync.sh <<'EOF'
 #!/bin/sh
 cd /app
-echo "[$(date)] Starting sync..."
-pnpm run sync ${SYNC_HOST:-e-hentai.org} 2>&1 | while IFS= read -r line; do
-    echo "[$(date)] $line"
-done
+HOURS=${SYNC_HOURS:-0}
+if [ "$HOURS" -gt 0 ]; then
+    echo "[$(date)] Starting sync with offset $HOURS hours..."
+    pnpm run sync ${SYNC_HOST:-e-hentai.org} $HOURS 2>&1 | while IFS= read -r line; do
+        echo "[$(date)] $line"
+    done
+else
+    echo "[$(date)] Starting sync..."
+    pnpm run sync ${SYNC_HOST:-e-hentai.org} 2>&1 | while IFS= read -r line; do
+        echo "[$(date)] $line"
+    done
+fi
 echo "[$(date)] Sync completed"
 EOF
 chmod +x /app/run-sync.sh
@@ -44,7 +52,11 @@ CRON_ENABLED=false
 if [ "$ENABLE_SYNC" = "true" ]; then
     SYNC_SCHEDULE="${SYNC_INTERVAL:-0 */6 * * *}"
     echo "$SYNC_SCHEDULE /app/run-sync.sh >> /proc/1/fd/1 2>&1" >>/etc/crontabs/root
-    echo "Sync enabled: $SYNC_SCHEDULE"
+    if [ "${SYNC_HOURS:-0}" -gt 0 ]; then
+        echo "Sync enabled: $SYNC_SCHEDULE (offset ${SYNC_HOURS} hours)"
+    else
+        echo "Sync enabled: $SYNC_SCHEDULE"
+    fi
     CRON_ENABLED=true
 fi
 
