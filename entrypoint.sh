@@ -43,6 +43,17 @@ echo "[$(date)] Torrent sync completed"
 EOF
 chmod +x /app/run-torrent-sync.sh
 
+cat >/app/run-favorite-sync.sh <<'EOF'
+#!/bin/sh
+cd /app
+echo "[$(date)] Starting favorite sync..."
+pnpm run favorite-sync 2>&1 | while IFS= read -r line; do
+    echo "[$(date)] $line"
+done
+echo "[$(date)] Favorite sync completed"
+EOF
+chmod +x /app/run-favorite-sync.sh
+
 # Create crontab file
 echo "# E-Hentai DB Auto Sync Tasks" >/etc/crontabs/root
 
@@ -73,6 +84,14 @@ if [ "$ENABLE_TORRENT_SYNC" = "true" ]; then
     TORRENT_SCHEDULE="${TORRENT_SYNC_INTERVAL:-0 0 * * *}"
     echo "$TORRENT_SCHEDULE /app/run-torrent-sync.sh >> /proc/1/fd/1 2>&1" >>/etc/crontabs/root
     echo "Torrent sync enabled: $TORRENT_SCHEDULE"
+    CRON_ENABLED=true
+fi
+
+# Add favorite sync task if enabled
+if [ "$ENABLE_FAVORITE_SYNC" = "true" ]; then
+    FAVORITE_SCHEDULE="${FAVORITE_SYNC_INTERVAL:-0 4 * * *}"
+    echo "$FAVORITE_SCHEDULE /app/run-favorite-sync.sh >> /proc/1/fd/1 2>&1" >>/etc/crontabs/root
+    echo "Favorite sync enabled: $FAVORITE_SCHEDULE"
     CRON_ENABLED=true
 fi
 

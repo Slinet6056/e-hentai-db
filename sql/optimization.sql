@@ -163,3 +163,8 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+-- Add foreign key constraints
+ALTER TABLE `gid_tid`
+  ADD CONSTRAINT `fk_gid_tid_gallery` FOREIGN KEY (`gid`) REFERENCES `gallery` (`gid`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_gid_tid_tag` FOREIGN KEY (`tid`) REFERENCES `tag` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;

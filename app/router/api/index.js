@@ -5,6 +5,7 @@ const tag = require('./tag');
 const category = require('./category');
 const uploader = require('./uploader');
 const search = require('./search');
+const favorite = require('./favorite');
 const notFound = require('../../action/notFound');
 
 const router = Router();
@@ -16,6 +17,8 @@ router.use('/category', category);
 router.use('/cat', category);
 router.use('/uploader', uploader);
 router.use('/search', search);
+router.use('/favorite', favorite);
+router.use('/fav', favorite);
 router.use('/', notFound);
 
 module.exports = router;
