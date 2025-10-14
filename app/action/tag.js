@@ -23,21 +23,48 @@ const tagList = async (req, res) => {
 
 	const conn = await new ConnectDB().connect();
 
+	let existsClauses = '';
+	const queryParams = [];
+
+	if (tags.length === 1) {
+		existsClauses = `INNER JOIN gid_tid AS gt ON a.gid = gt.gid
+			INNER JOIN tag AS t ON gt.tid = t.id AND t.name = ?`;
+		queryParams.push(tags[0]);
+	} else {
+		existsClauses = tags.map((_, idx) => {
+			queryParams.push(tags[idx]);
+			return `EXISTS (
+				SELECT 1 FROM gid_tid AS gt${idx}
+				INNER JOIN tag AS t${idx} ON gt${idx}.tid = t${idx}.id
+				WHERE gt${idx}.gid = a.gid AND t${idx}.name = ?
+			)`;
+		}).join(' AND ');
+		existsClauses = `WHERE expunged = 0 AND ${existsClauses}`;
+	}
+
 	const result = await conn.query(
-		`SELECT a.* FROM gallery AS a FORCE INDEX(posted) INNER JOIN (
-			SELECT a.* FROM gid_tid AS a INNER JOIN (
-				SELECT id FROM tag WHERE name IN (?)
-			) AS b ON a.tid = b.id GROUP BY a.gid HAVING COUNT(a.gid) = ? ORDER BY NULL
-		) AS b ON a.gid = b.gid WHERE expunged = 0 ORDER BY posted DESC LIMIT ? OFFSET ?`,
-		[tags, tags.length, limit, (page - 1) * limit]
+		tags.length === 1
+			? `SELECT DISTINCT a.* FROM gallery AS a USE INDEX(idx_expunged_posted) ${existsClauses}
+				WHERE a.expunged = 0 ORDER BY a.posted DESC LIMIT ? OFFSET ?`
+			: `SELECT a.* FROM gallery AS a USE INDEX(idx_expunged_posted) ${existsClauses}
+				ORDER BY a.posted DESC LIMIT ? OFFSET ?`,
+		[...queryParams, limit, (page - 1) * limit]
 	);
 	const { total } = (await conn.query(
-		`SELECT COUNT(*) AS total FROM gallery AS a INNER JOIN (
-			SELECT a.* FROM gid_tid AS a INNER JOIN(
-				SELECT id FROM tag WHERE name IN(?)
-			) AS b ON a.tid = b.id GROUP BY a.gid HAVING COUNT(a.gid) = ? ORDER BY NULL
-		) AS b ON a.gid = b.gid WHERE expunged = 0`,
-		[tags, tags.length]
+		tags.length === 1
+			? `SELECT COUNT(DISTINCT a.gid) AS total FROM gallery AS a
+				INNER JOIN gid_tid AS gt ON a.gid = gt.gid
+				INNER JOIN tag AS t ON gt.tid = t.id AND t.name = ?
+				WHERE a.expunged = 0`
+			: `SELECT COUNT(*) AS total FROM gallery AS a
+				WHERE expunged = 0 AND ${tags.map((_, idx) => {
+					return `EXISTS (
+						SELECT 1 FROM gid_tid AS gt${idx}
+						INNER JOIN tag AS t${idx} ON gt${idx}.tid = t${idx}.id
+						WHERE gt${idx}.gid = a.gid AND t${idx}.name = ?
+					)`;
+				}).join(' AND ')}`,
+		queryParams
 	))[0];
 
 	if (!result.length) {
@@ -47,8 +74,10 @@ const tagList = async (req, res) => {
 
 	const gids = result.map(e => e.gid);
 	const rootGids = result.map(e => e.root_gid).filter(e => e);
-	const gidTags = await queryTags(conn, gids);
-	const gidTorrents = await queryTorrents(conn, rootGids);
+	const [gidTags, gidTorrents] = await Promise.all([
+		queryTags(conn, gids),
+		queryTorrents(conn, rootGids)
+	]);
 
 	result.forEach(e => {
 		e.tags = gidTags[e.gid] || [];

@@ -1,5 +1,7 @@
 const mysql = require('mysql');
 const fs = require('fs');
+const path = require('path');
+const childProcess = require('child_process');
 const config = require('../config');
 
 class Import {
@@ -16,6 +18,7 @@ class Import {
 		this.tagMap = {};
 		this.query = this.query.bind(this);
 		this.readFile = this.readFile.bind(this);
+		this.updateStats = this.updateStats.bind(this);
 		this.run = this.run.bind(this);
 		this.filePath = process.argv[2] || './gdata.json';
 		this.force = process.argv.indexOf('-f') >= 0;
@@ -31,7 +34,7 @@ class Import {
 					}
 					resolve(results);
 				});
-			} catch(err) {
+			} catch (err) {
 				reject(err);
 			}
 		});
@@ -63,7 +66,7 @@ class Import {
 					parseChunk(lastChunk);
 					resolve(data);
 				});
-			} catch(err) {
+			} catch (err) {
 				reject(err);
 			}
 		});
@@ -82,6 +85,23 @@ class Import {
 			const result = {};
 			data.forEach(e => result[e.gid] = e.posted);
 			return result;
+		});
+	}
+
+	updateStats() {
+		const scriptPath = path.join(__dirname, 'updateStats.js');
+		return new Promise((resolve, reject) => {
+			const updateProcess = childProcess.spawn(process.execPath, [scriptPath, '--gallery', '--uploader', '--tag'], {
+				stdio: 'inherit'
+			});
+			updateProcess.on('error', reject);
+			updateProcess.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+					return;
+				}
+				reject(new Error(`updateStats.js exited with code ${code}`));
+			});
 		});
 	}
 
@@ -137,7 +157,7 @@ class Import {
 					results.forEach((e) => tagMap[e.name] = e.id);
 				}
 
-				const queries = []; 
+				const queries = [];
 				if (!galleries.hasOwnProperty(gid)) {
 					inserted++;
 					queries.push(this.query('INSERT INTO gallery SET ?', {
@@ -179,10 +199,21 @@ class Import {
 					console.log(`inserted gid = ${id} (${index}/${length})`);
 				}
 			}
-			
+
 			console.log(`inserts complete, inserted ${inserted} galleries`);
 			const nt = new Date();
 			console.log(`finished at ${nt}, total time ${nt - ct}ms`);
+			if (inserted > 0) {
+				console.log('detected data changes, updating statistics...');
+				try {
+					await this.updateStats();
+					console.log('statistics update completed automatically.');
+				} catch (err) {
+					console.error('failed to update statistics automatically:', err.stack || err);
+				}
+			} else {
+				console.log('no new or updated galleries detected, skipping statistics update.');
+			}
 
 			connection.destroy();
 		});

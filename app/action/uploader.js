@@ -2,6 +2,7 @@ const ConnectDB = require('../util/connectDB');
 const getResponse = require('../util/getResponse');
 const queryTags = require('../util/queryTags');
 const queryTorrents = require('../util/queryTorrents');
+const { getGalleryCount } = require('../util/getStats');
 
 const uploaderList = async (req, res) => {
 	let { uploader, page = 1, limit = 10 } = Object.assign({}, req.params, req.query);
@@ -21,13 +22,10 @@ const uploaderList = async (req, res) => {
 	const conn = await new ConnectDB().connect();
 
 	const result = await conn.query(
-		'SELECT * FROM gallery WHERE expunged = 0 AND uploader = ? ORDER BY posted DESC LIMIT ? OFFSET ?',
+		'SELECT * FROM gallery USE INDEX(idx_uploader_expunged_posted) WHERE expunged = 0 AND uploader = ? ORDER BY posted DESC LIMIT ? OFFSET ?',
 		[uploader, limit, (page - 1) * limit]
 	);
-	const { total } = (await conn.query(
-		'SELECT COUNT(*) AS total FROM gallery WHERE expunged = 0 AND uploader = ?',
-		[uploader, limit, (page - 1) * limit]
-	))[0];
+	const total = await getGalleryCount(conn, { expunged: 0, uploader });
 
 	if (!result.length) {
 		conn.destroy();
@@ -36,8 +34,10 @@ const uploaderList = async (req, res) => {
 
 	const gids = result.map(e => e.gid);
 	const rootGids = result.map(e => e.root_gid).filter(e => e);
-	const gidTags = await queryTags(conn, gids);
-	const gidTorrents = await queryTorrents(conn, rootGids);
+	const [gidTags, gidTorrents] = await Promise.all([
+		queryTags(conn, gids),
+		queryTorrents(conn, rootGids)
+	]);
 
 	result.forEach(e => {
 		e.tags = gidTags[e.gid] || [];

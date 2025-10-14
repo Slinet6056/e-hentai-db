@@ -118,127 +118,160 @@ const search = async (req, res) => {
 
 	const conn = await new ConnectDB().connect();
 
-	let table;
-	// prefer to get tag galleries first
-	/* eslint-disable indent */
-	if (tags.inc.length || tags.exc.length || tags.or.length || tags.like.length || tags.notLike.length || tags.orLike.length) {
-		if (tags.inc.length || tags.like.length) {
-			const inc = [...new Set(tags.inc)];
-			const like = [...new Set(tags.like)];
-			table = conn.connection.format(
-				`(
-					SELECT a.* FROM gid_tid AS a INNER JOIN (
-						SELECT id FROM tag WHERE ${[
-							inc.length && conn.connection.format('name IN (?)', [inc]),
-							like.length && like.map(e => conn.connection.format('name LIKE ?', [e])).join(' OR ')
-						].filter(e => e).join(' OR ')}
-					) AS b ON a.tid = b.id GROUP BY a.gid HAVING COUNT(a.gid) >= ? ORDER BY NULL
-				)`,
-				// TODO: inc + like?
-				[inc.length + like.reduce((pre, e) => {
-					if (inc.some(i => i.includes(e.replace(/%/g, '')))) {
-						return pre;
-					}
-					return pre + 1;
-				}, 0)]
-			);
-		}
+	const whereClauses = [];
 
-		if (tags.or.length || tags.orLike.length) {
-			const orTable = conn.connection.format(
-				`(
-					SELECT a.* FROM gid_tid AS a INNER JOIN (
-						SELECT id FROM tag WHERE ${[
-					tags.or.length && conn.connection.format('name IN (?)', [tags.or]),
-					tags.orLike.length && tags.orLike.map(e => conn.connection.format('name LIKE ?', [e])).join(' OR ')
-				].filter(e => e).join(' OR ')}
-					) AS b ON a.tid = b.id
-				)`
-			);
-			if (!table) {
-				table = orTable;
-			} else {
-				table = `SELECT a.* FROM ${table} AS a INNER JOIN ${orTable} AS b ON a.gid = b.gid`;
-			}
-		}
-
-		let excTable;
-		if (tags.exc.length || tags.notLike.length) {
-			excTable = conn.connection.format(
-				`(
-					SELECT a.* FROM gid_tid AS a INNER JOIN (
-						SELECT id FROM tag WHERE ${[
-							tags.inc.length && conn.connection.format('name IN (?)', [tags.exc]),
-							tags.like.length && tags.like.map(e => conn.connection.format('name LIKE ?', [e])).join(' OR ')
-						].filter(e => e).join(' OR ')}
-					) AS b ON a.tid = b.id
-				)`
-			);
-			// if (table) {
-			// 	table = `gallery LEFT JOIN ${excTable} AS t ON gallery.gid = t.gid WHERE t.gid IS NULL`;
-			// }
-			// else {
-			// 	table = `(
-			// 		SELECT a.* FROM gid_tid AS a LEFT JOIN ${excTable} AS b ON a.gid = b.gid WHERE b.gid IS NULL
-			// 	)`;
-			// }
-		}
-		if (excTable && !table) {
-			table = `gallery LEFT JOIN ${excTable} AS t ON gallery.gid = t.gid`;
-		}
-		else {
-			if (excTable) {
-				table = `(
-					SELECT a.* FROM (${table}) AS a LEFT JOIN ${excTable} AS b ON a.gid = b.gid WHERE b.gid IS NULL
-				)`;
-			}
-			table = `gallery FORCE INDEX(posted) INNER JOIN (${table}) AS t ON gallery.gid = t.gid`;
-		}
+	if (!expunged) {
+		whereClauses.push('gallery.expunged = 0');
 	}
-	else {
-		table = 'gallery';
+	if (!removed) {
+		whereClauses.push('gallery.removed = 0');
 	}
-	/* eslint-enable indent */
+	if (!replaced) {
+		whereClauses.push('gallery.replaced = 0');
+	}
 
-	const query = [
-		!expunged && 'expunged = 0',
-		!removed && 'removed = 0',
-		!replaced && 'replaced = 0',
-		!tags.inc.length && tags.exc.length && 't.gid IS NULL',
-		cats.length && cats.length !== 10 && conn.connection.format('category IN (?)', [cats]),
-		// E-Hentai only returns the latest gallery of specific gid, but whatever, we have `replaced`
-		rootIds.inc.length && conn.connection.format('root_gid IN (SELECT root_gid FROM gallery WHERE gid IN (?))', [rootIds.inc]),
-		rootIds.exc.length && conn.connection.format('root_gid NOT IN (SELECT root_gid FROM gallery WHERE gid IN (?))', [rootIds.exc]),
-		uploader.inc.length && conn.connection.format('uploader IN (?)', [uploader.inc]),
-		uploader.exc.length && conn.connection.format('uploader NOT IN (?)', [uploader.exc]),
-		minpage && conn.connection.format('filecount >= ?', [minpage]),
-		maxpage && conn.connection.format('filecount <= ?', [maxpage]),
-		minrating && minrating > 1 && conn.connection.format('rating >= ?', [minrating - 0.5]),
-		mindate && conn.connection.format('posted >= ?', [mindate]),
-		maxdate && conn.connection.format('posted <= ?', [maxdate]),
-		// MariaDB can use `RLIKE '(?=keywordA)(?=keywordB)...'` to optimize the performance
-		// but looks like MySQL 5+ doesn't support positive look ahead
-		(keywords.inc.length || keywords.like.length) && [
+	if (cats.length && cats.length !== 10) {
+		whereClauses.push(conn.connection.format('gallery.category IN (?)', [cats]));
+	}
+
+	if (rootIds.inc.length) {
+		whereClauses.push(conn.connection.format(
+			'gallery.root_gid IN (SELECT root_gid FROM gallery WHERE gid IN (?))',
+			[rootIds.inc]
+		));
+	}
+	if (rootIds.exc.length) {
+		whereClauses.push(conn.connection.format(
+			'gallery.root_gid NOT IN (SELECT root_gid FROM gallery WHERE gid IN (?))',
+			[rootIds.exc]
+		));
+	}
+
+	if (uploader.inc.length) {
+		whereClauses.push(conn.connection.format('gallery.uploader IN (?)', [uploader.inc]));
+	}
+	if (uploader.exc.length) {
+		whereClauses.push(conn.connection.format('gallery.uploader NOT IN (?)', [uploader.exc]));
+	}
+	if (uploader.like.length) {
+		whereClauses.push(uploader.like.map(e =>
+			conn.connection.format('gallery.uploader LIKE ?', [e])
+		).join(' OR '));
+	}
+	if (uploader.notLike.length) {
+		whereClauses.push(uploader.notLike.map(e =>
+			conn.connection.format('gallery.uploader NOT LIKE ?', [e])
+		).join(' AND '));
+	}
+
+	if (minpage) {
+		whereClauses.push(conn.connection.format('gallery.filecount >= ?', [minpage]));
+	}
+	if (maxpage) {
+		whereClauses.push(conn.connection.format('gallery.filecount <= ?', [maxpage]));
+	}
+	if (minrating && minrating > 1) {
+		whereClauses.push(conn.connection.format('gallery.rating >= ?', [minrating - 0.5]));
+	}
+	if (mindate) {
+		whereClauses.push(conn.connection.format('gallery.posted >= ?', [mindate]));
+	}
+	if (maxdate) {
+		whereClauses.push(conn.connection.format('gallery.posted <= ?', [maxdate]));
+	}
+
+	if (keywords.inc.length || keywords.like.length) {
+		const keywordConditions = [
 			...keywords.inc.map(e => `%${e}%`),
 			...keywords.like,
-		].map(
-			e => conn.connection.format('CONCAT_WS(\' \', title, title_jpn) LIKE ?', e)
-		).join(' AND '),
-		(keywords.exc.length || keywords.notLike.length) && [
+		].map(e => conn.connection.format('CONCAT_WS(\' \', gallery.title, gallery.title_jpn) LIKE ?', e));
+		whereClauses.push(`(${keywordConditions.join(' AND ')})`);
+	}
+	if (keywords.exc.length || keywords.notLike.length) {
+		const keywordConditions = [
 			...keywords.exc.map(e => `%${e}%`),
 			...keywords.notLike,
-		].map(
-			e => conn.connection.format('CONCAT_WS(\' \', title, title_jpn) NOT LIKE ?', e)
-		).join(' AND '),
-	].filter(e => e).join(' AND ');
+		].map(e => conn.connection.format('CONCAT_WS(\' \', gallery.title, gallery.title_jpn) NOT LIKE ?', e));
+		whereClauses.push(`(${keywordConditions.join(' AND ')})`);
+	}
+
+	if (tags.inc.length) {
+		const inc = [...new Set(tags.inc)];
+		inc.forEach(tagName => {
+			whereClauses.push(conn.connection.format(
+				`EXISTS (
+					SELECT 1 FROM gid_tid
+					INNER JOIN tag ON gid_tid.tid = tag.id
+					WHERE gid_tid.gid = gallery.gid AND tag.name = ?
+				)`,
+				[tagName]
+			));
+		});
+	}
+
+	if (tags.like.length) {
+		const like = [...new Set(tags.like)];
+		like.forEach(pattern => {
+			whereClauses.push(conn.connection.format(
+				`EXISTS (
+					SELECT 1 FROM gid_tid
+					INNER JOIN tag ON gid_tid.tid = tag.id
+					WHERE gid_tid.gid = gallery.gid AND tag.name LIKE ?
+				)`,
+				[pattern]
+			));
+		});
+	}
+
+	if (tags.exc.length) {
+		tags.exc.forEach(tagName => {
+			whereClauses.push(conn.connection.format(
+				`NOT EXISTS (
+					SELECT 1 FROM gid_tid
+					INNER JOIN tag ON gid_tid.tid = tag.id
+					WHERE gid_tid.gid = gallery.gid AND tag.name = ?
+				)`,
+				[tagName]
+			));
+		});
+	}
+
+	if (tags.notLike.length) {
+		tags.notLike.forEach(pattern => {
+			whereClauses.push(conn.connection.format(
+				`NOT EXISTS (
+					SELECT 1 FROM gid_tid
+					INNER JOIN tag ON gid_tid.tid = tag.id
+					WHERE gid_tid.gid = gallery.gid AND tag.name LIKE ?
+				)`,
+				[pattern]
+			));
+		});
+	}
+
+	const whereClause = whereClauses.length ? whereClauses.join(' AND ') : '1';
+
+	let indexHint = '';
+	if (cats.length === 1 && whereClauses.some(c => c.includes('category'))) {
+		indexHint = 'USE INDEX(idx_category_expunged_posted)';
+	} else if (whereClauses.some(c => c.includes('uploader')) && uploader.inc.length === 1) {
+		indexHint = 'USE INDEX(idx_uploader_expunged_posted)';
+	} else if (!expunged) {
+		indexHint = 'USE INDEX(idx_expunged_posted)';
+	}
 
 	const result = await conn.query(
-		`SELECT DISTINCT gallery.* FROM ${table} WHERE ${query || 1} ORDER BY gallery.posted DESC LIMIT ? OFFSET ?`,
+		`SELECT gallery.* FROM gallery ${indexHint}
+		WHERE ${whereClause}
+		ORDER BY gallery.posted DESC
+		LIMIT ? OFFSET ?`,
 		[limit, (page - 1) * limit]
 	);
 
-	const noForceIndexTable = table.replace('FORCE INDEX(posted)', '');
-	const { total } = (await conn.query(`SELECT COUNT(DISTINCT gallery.gid) AS total FROM ${noForceIndexTable} WHERE ${query || 1}`))[0];
+	const { total } = (await conn.query(
+		`SELECT COUNT(*) AS total FROM gallery ${indexHint}
+		WHERE ${whereClause}`
+	))[0];
 
 	if (!result.length) {
 		conn.destroy();
@@ -247,8 +280,11 @@ const search = async (req, res) => {
 
 	const gids = result.map(e => e.gid);
 	const rootGids = result.map(e => e.root_gid).filter(e => e);
-	const gidTags = await queryTags(conn, gids);
-	const gidTorrents = await queryTorrents(conn, rootGids);
+
+	const [gidTags, gidTorrents] = await Promise.all([
+		queryTags(conn, gids),
+		queryTorrents(conn, rootGids)
+	]);
 
 	result.forEach(e => {
 		e.tags = gidTags[e.gid] || [];

@@ -21,18 +21,18 @@ CREATE TABLE IF NOT EXISTS `gallery` (
   `root_gid` int(11) DEFAULT NULL,
   `bytorrent` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`gid`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `gid_tid` (
   `gid` int(11) NOT NULL,
   `tid` int(11) NOT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `tag` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(200) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `torrent` (
   `id` int(11) NOT NULL,
@@ -43,4 +43,4 @@ CREATE TABLE `torrent` (
   `fsizestr` varchar(15) DEFAULT NULL,
   `uploader` varchar(50) NOT NULL,
   `expunged` tinyint(1) NOT NULL DEFAULT 0
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
