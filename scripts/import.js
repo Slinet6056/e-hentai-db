@@ -186,9 +186,11 @@ class Import {
 						]));
 					}
 					if (delTids.length) {
-						queries.push(this.query('DELETE FROM gid_tid WHERE (gid, tid) IN (?)', [
-							delTids.map(e => [+id, e])
-						]));
+						// Use separate DELETE for each tid to avoid full table scan with IN clause
+						// The (gid, tid) IN (...) syntax causes MySQL to not use indexes properly
+						for (const tid of delTids) {
+							queries.push(this.query('DELETE FROM gid_tid WHERE gid = ? AND tid = ?', [+id, tid]));
+						}
 					}
 				}
 				else {

@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS `favorite` (
   PRIMARY KEY (`gid`),
   KEY `idx_favcat_favtime` (`favcat`, `favtime`),
   KEY `idx_favtime` (`favtime`),
-  FOREIGN KEY (`gid`) REFERENCES `gallery`(`gid`) ON DELETE CASCADE
+  CONSTRAINT `fk_favorite_gallery` FOREIGN KEY (`gid`) REFERENCES `gallery`(`gid`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

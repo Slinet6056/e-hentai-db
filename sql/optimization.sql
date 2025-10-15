@@ -26,7 +26,9 @@ ALTER TABLE `gallery` RENAME INDEX `root_gid` TO `idx_root_gid`;
 
 ALTER TABLE `gallery` RENAME INDEX `filecount` TO `idx_filecount`;
 
-ALTER TABLE `gid_tid` RENAME INDEX `gid_2` TO `idx_gid_tid`;
+ALTER TABLE `gid_tid` ADD PRIMARY KEY (`gid`, `tid`);
+
+ALTER TABLE `gid_tid` DROP INDEX `gid_2`;
 
 ALTER TABLE `gid_tid` RENAME INDEX `tid` TO `idx_tid_gid`;
 
